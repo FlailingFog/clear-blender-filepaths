@@ -1,4 +1,4 @@
-import bpy
+import bpy, time
 from bpy.utils import register_class, unregister_class
 
 bl_info = {
@@ -22,41 +22,108 @@ class cbf(bpy.types.Operator):
         if not bpy.data.filepath:
             return {'FINISHED'}
         
+        self.save_new_file()
+        self.find_and_overwrite_filepaths()
+        self.close_blender()
+        return {'FINISHED'}
+
+    def save_new_file(self):
         #save the file as an uncompressed file next to the original
         bpy.ops.wm.save_as_mainfile(filepath = bpy.data.filepath.replace('.blend', '_cleaned.blend'), compress = False, relative_remap = False)
 
+    def find_and_overwrite_filepaths(self):
         #collect all filepaths
         filepath_list = []
         def add(this):
             if this and (this not in filepath_list):
                 filepath_list.append(this)
+
+        categories = bpy.data.__dir__()
+        remove_these = ['bl_rna', 'use_autopack', 'is_saved', 'is_dirty', 'rna_type', '__doc__', 'filepath', 'version', 'scenes', 'screens', 'window_managers', 'workspaces', 'fonts']
+        for remove in remove_these:
+            categories.remove(remove)
         
-        for cat in [bpy.data.images,
-                    bpy.data.objects,
-                    bpy.data.linestyles,
-                    bpy.data.materials,
-                    bpy.data.node_groups,
-                    bpy.data.texts,
-                    bpy.data.cameras,
-                    bpy.data.lights,
-                    bpy.data.meshes]:
-            for item in cat:
-                for check in ['filepath', 'filepath_raw']:
-                    if getattr(item, check, None):
-                        add(getattr(item, check, None))
-                    if getattr(item, 'original', None):
-                        if getattr(item.original, 'filepath', None):
-                            add(item.original.filepath)
-                    if getattr(item, 'library_weak_reference', None):
-                        if getattr(item.library_weak_reference, 'filepath', None):
-                            add(item.library_weak_reference.filepath)
-                    if getattr(item, 'packed_files', None):
-                        for packed_file in getattr(item, 'packed_files', []):
-                            if getattr(packed_file, 'filepath', None):
-                                add(packed_file.filepath)     
-                                    
+        #get a list of hidden objects and hidden collections
+        hide = []
+        hide_viewport = []
+        hide_render = []
+        def recursive_find_hidden_child(layer_col):
+            if layer_col:
+                if layer_col.exclude:
+                    hide.append(layer_col.name)
+                if len(layer_col.children):
+                    for child in layer_col.children:
+                        recursive_find_hidden_child(child)
+
+        def recursive_write_hidden_child(layer_col):
+            if layer_col:
+                if layer_col in hide:
+                    layer_col.exclude = True
+                if len(layer_col.children):
+                    for child in layer_col.children:
+                        recursive_write_hidden_child(child)
+
+        for c in bpy.data.collections:
+            if c.hide_render:
+                hide_render.append(c.name)
+            if c.hide_viewport:
+                hide_viewport.append(c.name)
+            layer_col = bpy.context.view_layer.layer_collection.children.get(c.name)
+            recursive_find_hidden_child(layer_col)
+
+        for o in bpy.data.objects:
+            if o.hide:
+                hide.append(o.name)
+            if o.hide_render:
+                hide_render.append(o.name)
+            if o.hide_viewport:
+                hide_viewport.append(o.name)
+        
+        for category in categories:
+            #print(category)
+            cat = getattr(bpy.data, category)
+            if not callable(cat):
+                for item in cat:
+                    #print(item)
+                    for check in ['filepath', 'filepath_raw']:
+                        if getattr(item, check, None):
+                            add(getattr(item, check, None))
+                        if getattr(item, 'original', None):
+                            if getattr(item.original, 'filepath', None):
+                                add(item.original.filepath)
+                        if getattr(item, 'library_weak_reference', None):
+                            if getattr(item.library_weak_reference, 'filepath', None):
+                                add(item.library_weak_reference.filepath)
+                        if getattr(item, 'packed_files', None):
+                            for packed_file in getattr(item, 'packed_files', []):
+                                if getattr(packed_file, 'filepath', None):
+                                    add(packed_file.filepath)
+                    #some things have a filepath property that I cannot find through the python api
+                    #Make a copy of it then remap every instance with the copy
+                    #The copy will no longer have the mysterious filepath property
+                    #print(item)
+                    if getattr(item, 'name', None):
+                        item.name = item.name + 'mysteriouslymysterious'
+                        copy = item.copy()
+                        copy.name = item.name.replace('mysteriouslymysterious','')
+                        item.user_remap(copy)
+                        cat.remove(item)
+                        #preserve hide / exclude state before the item was copied
+                        if category == 'collections':
+                            layer_col = bpy.context.view_layer.layer_collection.children.get(copy.name)
+                            recursive_write_hidden_child(layer_col)
+                        elif copy.name in hide:
+                            copy.hide = True
+                        if copy.name in hide_render:
+                            copy.hide_render = True
+                        if copy.name in hide_viewport:
+                            copy.hide_viewport = True                            
+        
         add(bpy.data.filepath)
         add(bpy.context.scene.render.filepath if bpy.context.scene.render.filepath != '/tmp\\' else None)
+
+        #save one more time after doing the copy remap
+        bpy.ops.wm.save_mainfile(compress = False, relative_remap = False)
 
         #read the whole file in and check for any filepath instances
         original_filepath = bpy.data.filepath
@@ -69,8 +136,10 @@ class cbf(bpy.types.Operator):
         #overwrite the file with filepaths replaced as 'bbbbbbb'
         file = open(original_filepath, 'wb')
         file.write(raw_data)
+        time.sleep(1)
         file.close()
 
+    def close_blender(self):
         #close blender so the cleaned file is not accidentally overwritten
         bpy.ops.wm.quit_blender()
         return {'FINISHED'}
