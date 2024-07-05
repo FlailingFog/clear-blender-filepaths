@@ -50,21 +50,27 @@ The new file will be saved with the current filename + "_cleaned" at the end. Bl
             if layer_col:
                 if layer_col.exclude:
                     hide.append(layer_col.name)
+                if layer_col.hide_viewport:
+                    hide_viewport.append(layer_col.name)
                 if len(layer_col.children):
                     for child in layer_col.children:
                         recursive_find_hidden_child(child)
+
         def recursive_write_hidden_child(layer_col):
             if layer_col:
-                if layer_col in hide:
+                if layer_col.name in hide:
                     layer_col.exclude = True
+                if layer_col.name in hide_viewport:
+                    layer_col.hide_viewport = True
+                if layer_col.name in hide_render:
+                    bpy.data.collections[layer_col.name].hide_render = True
                 if len(layer_col.children):
                     for child in layer_col.children:
                         recursive_write_hidden_child(child)
+
         for c in bpy.data.collections:
             if c.hide_render:
                 hide_render.append(c.name)
-            if c.hide_viewport:
-                hide_viewport.append(c.name)
             layer_col = bpy.context.view_layer.layer_collection.children.get(c.name)
             recursive_find_hidden_child(layer_col)
         for o in bpy.data.objects:
@@ -78,11 +84,11 @@ The new file will be saved with the current filename + "_cleaned" at the end. Bl
         #Now go through every category and item, and look for filepath instances
         #If one is found, add it to the filepath_list array
         for category in categories:
-            print(category)
+            # print(category)
             cat = getattr(bpy.data, category)
             if not callable(cat):
                 for item in cat:
-                    #print(item)d
+                    # print(item)
                     for check in ['filepath', 'filepath_raw']:
                         if getattr(item, check, None):
                             add(getattr(item, check, None))
@@ -99,13 +105,16 @@ The new file will be saved with the current filename + "_cleaned" at the end. Bl
                     #some things still have a filepath property that I cannot find through the python api
                     #Make a copy of anything with the name attribute, then remap every instance with the copy
                     #The copy will no longer have the mysterious filepath property
-                    print(item)
                     if getattr(item, 'name', None):
                         item.name = item.name + 'mysteriouslymysterious'
                         copy = item.copy()
                         copy.name = item.name.replace('mysteriouslymysterious','')
                         item.user_remap(copy)
-                        cat.remove(item)
+                        try:
+                            cat.remove(item)
+                        except:
+                            #This was likely a shapekey, and shapekeys don't have a remove function. Just use the orphan purge func to clear the old one instead
+                            bpy.ops.outliner.orphans_purge() 
                         #preserve hide / exclude state before the item was copied
                         if category == 'collections':
                             layer_col = bpy.context.view_layer.layer_collection.children.get(copy.name)
