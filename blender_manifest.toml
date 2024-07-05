@@ -44,4 +44,4 @@ platforms = ["windows-x64"]
 # For longer explanations use the documentation or detail page.
 
 [permissions]
-files = "Save a copy of .blend file without filepaths"
+files = "Saves a copy of a .blend file without filepaths"
