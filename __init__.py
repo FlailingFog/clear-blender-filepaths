@@ -106,10 +106,11 @@ The new file will be saved with the current filename + "_cleaned" at the end. Bl
                     #Make a copy of anything with the name attribute, then remap every instance with the copy
                     #The copy will no longer have the mysterious filepath property
                     if getattr(item, 'name', None):
-                        item.name = item.name + 'mysteriouslymysterious'
+                        original_name = item.name
                         copy = item.copy()
-                        copy.name = item.name.replace('mysteriouslymysterious','')
                         item.user_remap(copy)
+                        item.name = 'old delete'
+                        copy.name = original_name
                         try:
                             cat.remove(item)
                         except:
